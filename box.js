@@ -4,13 +4,14 @@ var platform = require('git-node-platform')
   , fs = platform.fs
   , nfs = require('graceful-fs')
   , watchr = require('watchr')
-  , path = require('path');
+  , path = require('path')
+  , config = require('./config').config;
 
 // Create a filesystem backed bare repo
 var repo = jsGit(fsDb(fs("home.git")))
-  , home = process.argv.splice(2)[0]
+  , home = config.home.path //process.argv.splice(2)[0]
   , index = {}
-  , commiter = {name: 'Roie', email: 'rhasson@gmail.com'}
+  , commiter = config.commiter
   , message = 'Commit message';
 
 if (!home) throw 'Must provide a full path to home directory';
@@ -34,6 +35,9 @@ watchr.watch({
 				} 
 			});
 		},
+ 		log: function(logLevel){
+            //console.log('a log message occured:', arguments);
+        },
 		change: function(changeType, filePath, currentStat, previousStat) {
 			switch (changeType) {
 				case 'create':
@@ -53,6 +57,7 @@ watchr.watch({
 			console.log('Err: ', e);
 		}
 	},
+	persistent: true,
 	ignoreHiddenFiles: true,
 	ignoreCustomPatterns: /\.(tmp)/i
 });

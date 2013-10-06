@@ -1,14 +1,14 @@
 {
-	"name": "gitbox",
-	"author": "roy hasson",
-	"version": "0.0.1",
-	"private": true,
-	"dependencies": {
-	  "git-fs-db": "0.2.0",
-	  "git-node-platform": "0.1.4",
-	  "graceful-fs": "2.0.1",
-	  "js-git": "0.4.2",
-	  "watchr": "2.4.3"
-	},
-	"engine": ">=node 0.9"
+  "name": "gitbox",
+  "author": "roy hasson",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "git-fs-db": "~0.2.0",
+    "git-node-platform": "~0.1.4",
+    "graceful-fs": "2.0.1",
+    "js-git": "~0.5.2",
+    "watchr": "2.4.3"
+  },
+  "engine": ">=node 0.9"
 }
