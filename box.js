@@ -36,7 +36,20 @@ watchr.watch({
 			});
 		},
  		log: function(logLevel){
-            //console.log('a log message occured:', arguments);
+            var args = Array.prototype.slice.call(arguments);
+            var msg, src, dst;
+
+console.log(args)
+            args.shift(); //remove 'debug' as the first field
+            msg = args.shift();
+/*
+            if (/determined delete/i.test(msg)) {
+            	src = args.shift();
+            	handleDelete(src);
+            } else if (/determined /i.test(msg)) {
+
+            }
+*/
         },
 		change: function(changeType, filePath, currentStat, previousStat) {
 			switch (changeType) {
@@ -59,7 +72,7 @@ watchr.watch({
 	},
 	persistent: true,
 	ignoreHiddenFiles: true,
-	ignoreCustomPatterns: /\.(tmp)/i
+	ignoreCustomPatterns: /\.(tmp)$/i
 });
 
 function handleCreate(filePath, currentStat, previousStat) {
@@ -87,7 +100,7 @@ function handleUpdate(filePath, currentStat, previousStat) {
 }
 
 function handleDelete(filePath, currentStat, previousStat) {
-
+	console.log('handleDelete: ', filePath);
 }
 
 function saveBlob(filePath, currentStat, previousStat, i) {
