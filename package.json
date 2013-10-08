@@ -8,7 +8,8 @@
     "git-node-platform": "~0.1.4",
     "graceful-fs": "2.0.1",
     "js-git": "~0.5.2",
-    "watchr": "2.4.3"
+    "watchr": "2.4.3",
+    "path-trie": "~0.1.1"
   },
   "engine": ">=node 0.9"
 }
