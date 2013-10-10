@@ -84,15 +84,18 @@ function handleDelete(filePath, currentStat, previousStat) {
 }
 
 function stage(filePath, currentStat, previousStat) {
-	var t
-	  , name = path.basename(filePath)
+	var name = path.basename(filePath)
 	  , base = path.basename(home)
 	  , ex_home = new RegExp('(' + base + ').*')
 	  , startPath = name
 	  , i = filePath.match(ex_home).index; // index of where home directory starts
 
 	// create the index is it doesn't exist
-	if (!trie.get(base)) index = trie.put(base, []);
+	if (!trie.get(base)) index = trie.put(base, {
+			master: true,
+			mode:040000,
+			nodes:[]
+		});
 	
 	// remove parts before begining of relative home directory
 	if (i >= 0) startPath = filePath.slice(i-1);
@@ -105,7 +108,10 @@ function stage(filePath, currentStat, previousStat) {
 		if (!previousStat || (currentStat.mtime.getTime() > previousStat.mtime.getTime())) {
 			startPath = startPath.join('/')
 			// create path object in index if doesn't exist
-			if (!index.get(startPath)) index.put(startPath, []);
+			if (!index.get(startPath)) index.put(startPath, {
+					mode: 040000,
+					nodes: []
+				});
 		}
 	} else if (currentStat.isFile()) {
 		// remove filename portion
@@ -114,32 +120,43 @@ function stage(filePath, currentStat, previousStat) {
 		startPath = startPath.join('/');
 		if (!previousStat || (currentStat.mtime.getTime() > previousStat.mtime.getTime())) {
 			//stage file within the index sub object associated with the subdirectory
-			t = index.get(startPath);
-			t.push({
-				name: name,
-				mode: 0100644
+			saveBlob(filePath, currentStat, previousStat, function(err, blobHash) {
+				var t = index.get(startPath);
+				if (err) throw ('failed to read file: ', name, ' - ', err);
+				t.nodes.push({
+					name: name,
+					mode: 0100644,
+					hash: blobHash
+				});
+				index.put(startPath, t);
+				console.log(util.inspect(index, {depth: 5}));
 			});
-			index.put(startPath, t);
 		}
 	} else {
 		console.log('Not sure what was created: ', filePath, currentStat);
 	}
 }
 
-function saveBlob(filePath, currentStat, previousStat, i) {
+function saveBlob(filePath, currentStat, previousStat, i, cb) {
 	var name = path.basename(filePath);
 	var dir = path.dirname(filePath);
 	var ebusy = /EBUSY/ig;
 
+	if (typeof i === 'function') {
+		cb = i;
+		i = 0;
+	}
+
 	if (!previousStat || currentStat.size !== previousStat.size) {
 		nfs.readFile(filePath, function(err, data) {
 			if (i === 3 && err) throw err;
-			if (err && ebusy.test(err.message)) return setTimeout(saveBlob, 1000, filePath, currentStat, previousStat, ++i);
+			if (err && ebusy.test(err.message)) return setTimeout(saveBlob, 1000, filePath, currentStat, previousStat, ++i, cb);
 
 			i = 0;
 			repo.saveAs('blob', data, function(err, blobHash) {
-				if (err) throw 'Failed to save blob: ' + err.message
-				var tree = {}, blob = {};
+				if (err) return cb(err); //throw 'Failed to save blob: ' + err.message
+				return cb(null, blobHash);
+/*				var tree = {}, blob = {};
 				tree[name] = {
 					mode: 0100644,
 					hash: blobHash
@@ -152,13 +169,21 @@ function saveBlob(filePath, currentStat, previousStat, i) {
 				};
 				console.log('Saved blob: ', blobHash);
 				if (blobHash) commitChanges(blob);
+*/
 			});
 		});
 	}
 }
 
 function commitChanges(blob) {
-//	console.log('INDEX: ', index);
+	var keys = Object.keys(index.flatten(index)).sort(pathCmp);
+	var tree = {};
+
+	async.each(keys, saveTree, function(err) {
+		//completed building commit tree
+		//save tree as a commit object
+	});
+/*
 	repo.saveAs('tree', blob.tree, function(err, treeHash) {
 		var node;
 		if (err) throw err;
@@ -183,9 +208,40 @@ function commitChanges(blob) {
 			repo.updateHead(commitHash, moveHead);
 		});
 	});
+*/
+}
+
+function saveTree(item, done) {
+	var t = index.get(item);
+	var p = item.split('/');
+	var prev, name;
+
+	name = p.pop();
+	prev = p.join('/');
+
+	repo.saveAs('tree', t.nodes, function(err, treeHash) {
+		if (err) return done(err)
+		t.hash = treeHash;
+		t.name = name;
+		t.mode = 040000;
+		index.put(item, t);
+		p = index.get(prev);
+		p.nodes.push({
+			t.hash,
+			t.name,
+			t.mode
+		});
+		return done();
+	});
 }
 
 function moveHead(err) {
 	console.log('updated HEAD');
 	if (err) throw err;
+}
+
+// Sort values from longest to shortest
+function pathCmp(a, b) {
+	a += "/"; b += "/";
+	return a > b ? -1 : a < b ? 1 : 0;
 }
