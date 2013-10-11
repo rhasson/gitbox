@@ -6,7 +6,10 @@ var platform = require('git-node-platform')
   , watchr = require('watchr')
   , path = require('path')
   , trie = require('path-trie')
-  , config = require('./config').config;
+  , async = require('async')
+  , config = require('./config').config
+  , timer = 5000
+  , interval = null;
 
 var util = require('util');
 
@@ -93,8 +96,10 @@ function stage(filePath, currentStat, previousStat) {
 	// create the index is it doesn't exist
 	if (!trie.get(base)) index = trie.put(base, {
 			master: true,
-			mode:040000,
-			nodes:[]
+			active: false,
+			mode: 040000,
+			name: base,
+			nodes:{}
 		});
 	
 	// remove parts before begining of relative home directory
@@ -110,26 +115,34 @@ function stage(filePath, currentStat, previousStat) {
 			// create path object in index if doesn't exist
 			if (!index.get(startPath)) index.put(startPath, {
 					mode: 040000,
-					nodes: []
+					name: name,
+					nodes: {}
 				});
+			console.log('ADDED FOLDER: ', name);
 		}
 	} else if (currentStat.isFile()) {
 		// remove filename portion
 		startPath.splice(startPath.length-1);
-		// join to make give relative path without filename
+		// join to make relative path without filename
 		startPath = startPath.join('/');
 		if (!previousStat || (currentStat.mtime.getTime() > previousStat.mtime.getTime())) {
 			//stage file within the index sub object associated with the subdirectory
 			saveBlob(filePath, currentStat, previousStat, function(err, blobHash) {
 				var t = index.get(startPath);
+				var b = index.get(base);
 				if (err) throw ('failed to read file: ', name, ' - ', err);
-				t.nodes.push({
-					name: name,
+				t.nodes[name] = {
 					mode: 0100644,
 					hash: blobHash
-				});
+				};
+				console.log('ADDED FILE: ', name, blobHash);
 				index.put(startPath, t);
-				console.log(util.inspect(index, {depth: 5}));
+				if (!interval && !b.active) {
+					interval = setTimeout(commitChanges, timer);
+				} else if (interval && !b.active) {
+					interval = clearTimeout(interval);
+					interval = setTimeout(commitChanges, timer);
+				}
 			});
 		}
 	} else {
@@ -148,6 +161,7 @@ function saveBlob(filePath, currentStat, previousStat, i, cb) {
 	}
 
 	if (!previousStat || currentStat.size !== previousStat.size) {
+		console.log('READ FILE: ', filePath)
 		nfs.readFile(filePath, function(err, data) {
 			if (i === 3 && err) throw err;
 			if (err && ebusy.test(err.message)) return setTimeout(saveBlob, 1000, filePath, currentStat, previousStat, ++i, cb);
@@ -156,59 +170,42 @@ function saveBlob(filePath, currentStat, previousStat, i, cb) {
 			repo.saveAs('blob', data, function(err, blobHash) {
 				if (err) return cb(err); //throw 'Failed to save blob: ' + err.message
 				return cb(null, blobHash);
-/*				var tree = {}, blob = {};
-				tree[name] = {
-					mode: 0100644,
-					hash: blobHash
-				};
-				blob = {
-					name: name,
-					dir: dir,
-					tree: tree,
-					stat: currentStat
-				};
-				console.log('Saved blob: ', blobHash);
-				if (blobHash) commitChanges(blob);
-*/
 			});
 		});
 	}
 }
 
-function commitChanges(blob) {
-	var keys = Object.keys(index.flatten(index)).sort(pathCmp);
-	var tree = {};
+function commitChanges() {
+	var keys = Object.keys(index.flatten(index)).sort(pathCmp)
+	, tree = {}
+	, base = path.basename(home)
+	, b = index.get(base);
+
+	b.active = true;
+	index.put(base, b);
+	interval = clearTimeout(interval);
 
 	async.each(keys, saveTree, function(err) {
 		//completed building commit tree
 		//save tree as a commit object
-	});
-/*
-	repo.saveAs('tree', blob.tree, function(err, treeHash) {
-		var node;
-		if (err) throw err;
-//		console.log('Saved tree: ', treeHash);
-		nodes = index[blob.dir] || [];
-		console.log(nodes);
-		nodes.push({
-			hash: treeHash,
-			node: blob.tree
-		});
+		b = index.get(base);
 		var commit = {
-			tree: treeHash,
+			tree: b.hash,
 			parent: __parent,
 			author: commiter,
 			commiter: commiter,
-			message: blob.name + ' - ' + blob.stat.mtime
+			message: 'some commit message'
 		};
 		repo.saveAs('commit', commit, function(err, commitHash) {
 			if (err) throw err;
-//			console.log('Saved commit: ', commitHash);
 			__parent = commitHash;
 			repo.updateHead(commitHash, moveHead);
+			b.active = false;
+			index.put(base, b);
+			console.log('commit saved: ', commitHash);
+			//console.log(err, util.inspect(index, {depth: 5}));
 		});
 	});
-*/
 }
 
 function saveTree(item, done) {
@@ -219,18 +216,20 @@ function saveTree(item, done) {
 	name = p.pop();
 	prev = p.join('/');
 
+console.log('SAVE TREE: ', name, t.nodes)
 	repo.saveAs('tree', t.nodes, function(err, treeHash) {
 		if (err) return done(err)
-		t.hash = treeHash;
-		t.name = name;
-		t.mode = 040000;
-		index.put(item, t);
 		p = index.get(prev);
-		p.nodes.push({
-			t.hash,
-			t.name,
-			t.mode
-		});
+		if (p) {
+			p.nodes[name] = {
+				hash: treeHash,
+				mode: 040000
+			};
+			index.put(prev, p);
+		} else {
+			t.hash = treeHash;
+			index.put(item, t);
+		}
 		return done();
 	});
 }
