@@ -185,7 +185,7 @@ function commitChanges() {
 	index.put(base, b);
 	interval = clearTimeout(interval);
 
-	async.each(keys, saveTree, function(err) {
+	async.eachSeries(keys, saveTree, function(err) {
 		//completed building commit tree
 		//save tree as a commit object
 		b = index.get(base);
@@ -216,10 +216,14 @@ function saveTree(item, done) {
 	name = p.pop();
 	prev = p.join('/');
 
-console.log('SAVE TREE: ', name, t.nodes)
+console.log('SAVE TREE: ', name, ' - ',prev, ' : ', t.nodes)
 	repo.saveAs('tree', t.nodes, function(err, treeHash) {
-		if (err) return done(err)
+		if (err) {
+			console.log('ERROR: ', err);
+			return done(err);
+		}
 		p = index.get(prev);
+	console.log('PREV: ', p);
 		if (p) {
 			p.nodes[name] = {
 				hash: treeHash,
